@@ -3,24 +3,62 @@ package main
 import (
 	"gossip-backend/db"
 	"gossip-backend/handlers"
+	"gossip-backend/middlewares"
+	"log"
+	"os"
+	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 )
 
 func main() {
-	db.InitDB() // initialize DB
+
+	if err := godotenv.Load(); err != nil {
+		log.Println("No .env file found")
+	}
+
+	db.InitDB()
+	defer db.DB.Close()
+
+	gin.SetMode(gin.ReleaseMode)
 
 	r := gin.Default()
 
-	// ✅ Enable CORS
-	r.Use(cors.Default()) // allows all origins, methods, headers
+	r.Use(cors.New(cors.Config{
 
-	// Authentication route
+		AllowOrigins: []string{
+			"http://localhost:3000", // React dev server
+		},
+		AllowMethods: []string{
+			"GET",
+			"POST",
+			"PUT",
+			"DELETE",
+			"OPTIONS", 
+		},
+		AllowHeaders: []string{
+			"Origin",
+			"Content-Type",
+			"Content-Length",
+			"Accept-Encoding",
+			"X-CSRF-Token",
+			"Authorization", 
+			"Accept",
+			"Cache-Control",
+			"X-Requested-With",
+		},
+		AllowCredentials: true,           
+		MaxAge:           12 * time.Hour, 
+	}))
+
+	// Public routes 
 	r.POST("/login", handlers.Login)
 
-	// API routes
+	// Protected routes
 	api := r.Group("/api")
+	api.Use(middlewares.JWTAuth())
 	{
 		api.GET("/topics", handlers.GetTopics)
 		api.POST("/topics", handlers.CreateTopic)
@@ -28,8 +66,8 @@ func main() {
 
 		api.GET("/posts", handlers.GetPosts)
 		api.POST("/posts", handlers.CreatePost)
-		api.GET("/posts/user/:user_id", handlers.GetUserPosts)
 		api.DELETE("/posts/:id", handlers.DeletePost)
+		api.GET("/posts/user/:user_id", handlers.GetUserPosts)
 
 		api.GET("/comments/:post_id", handlers.GetComments)
 		api.POST("/comments", handlers.CreateComment)
@@ -37,8 +75,16 @@ func main() {
 
 		api.GET("/posts/:post_id/likes", handlers.GetPostLikes)
 		api.POST("/posts/:post_id/like", handlers.ToggleLike)
-
 	}
 
-	r.Run(":8000")
+	// Start server
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8000"
+	}
+
+	log.Printf("Server running on http://localhost:%s", port)
+	if err := r.Run(":" + port); err != nil {
+		log.Fatal("Failed to start server:", err)
+	}
 }

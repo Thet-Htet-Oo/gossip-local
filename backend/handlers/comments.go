@@ -1,16 +1,15 @@
 package handlers
 
 import (
-	"fmt"
 	"gossip-backend/db"
 	"net/http"
-	"time" // Add this import
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
 type Comment struct {
-	ID              int       `json:"id"` // Change to time.Time
+	ID              int       `json:"id"`
 	PostID          int       `json:"post_id"`
 	UserID          int       `json:"user_id"`
 	Username        string    `json:"username"`
@@ -34,23 +33,23 @@ func GetComments(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	defer rows.Close() // Don't forget to close rows!
+	defer rows.Close()
 
 	var comments []Comment
 
 	for rows.Next() {
 		var comment Comment
-		// Check for errors during scan
+
 		if err := rows.Scan(
 			&comment.ID,
 			&comment.PostID,
 			&comment.UserID,
 			&comment.Username,
 			&comment.Content,
-			&comment.CreatedAt,
 			&comment.ParentCommentID,
+			&comment.CreatedAt,
 		); err != nil {
-			continue // Skip this comment if there's an error
+			continue
 		}
 
 		comments = append(comments, comment)
@@ -60,12 +59,25 @@ func GetComments(c *gin.Context) {
 }
 
 func CreateComment(c *gin.Context) {
-	var comment Comment
 
-	if err := c.ShouldBindJSON(&comment); err != nil {
+	var input struct {
+		PostID          int    `json:"post_id"`
+		Content         string `json:"content"`
+		ParentCommentID *int   `json:"parent_comment_id"`
+	}
+
+	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid input"})
 		return
 	}
+
+	userIDValue, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	userID := int(userIDValue.(float64))
 
 	var created Comment
 
@@ -74,10 +86,10 @@ func CreateComment(c *gin.Context) {
 	VALUES ($1,$2,$3,$4)
 	RETURNING id, post_id, user_id, content, parent_comment_id, created_at
 	`,
-		comment.PostID,
-		comment.UserID,
-		comment.Content,
-		comment.ParentCommentID,
+		input.PostID,
+		userID,
+		input.Content,
+		input.ParentCommentID,
 	).Scan(
 		&created.ID,
 		&created.PostID,
@@ -100,30 +112,34 @@ func CreateComment(c *gin.Context) {
 	c.JSON(http.StatusOK, created)
 }
 
-// Add this function to handlers/comments.go
 func DeleteComment(c *gin.Context) {
-	commentID := c.Param("id")
-	userID := c.Query("user_id") // Get user_id from query parameter
 
-	// First check if the comment belongs to the user
+	commentID := c.Param("id")
+
+	userIDValue, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	reqUserID := int(userIDValue.(float64))
+
+	// Check owner
 	var ownerID int
 	err := db.DB.QueryRow("SELECT user_id FROM comments WHERE id = $1", commentID).Scan(&ownerID)
+
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Comment not found"})
 		return
 	}
-
-	// Convert userID to int for comparison
-	var reqUserID int
-	fmt.Sscanf(userID, "%d", &reqUserID)
 
 	if ownerID != reqUserID {
 		c.JSON(http.StatusForbidden, gin.H{"error": "You can only delete your own comments"})
 		return
 	}
 
-	// Delete the comment
 	_, err = db.DB.Exec("DELETE FROM comments WHERE id = $1", commentID)
+
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete comment"})
 		return

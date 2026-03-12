@@ -25,7 +25,37 @@ import ThumbUpIcon from "@mui/icons-material/ThumbUp";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import SendIcon from "@mui/icons-material/Send";
 
-// Create a green theme with light green background
+const API_URL = "http://localhost:8000";
+
+const authFetch = async (url: string, options: RequestInit = {}) => {
+  const token = localStorage.getItem("token");
+  
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        ...(options.headers || {}),
+      },
+    });
+    
+    if (!response.ok) {
+      if (response.status === 401) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        window.location.href = "/";
+        throw new Error("Session expired");
+      }
+    }
+    
+    return response;
+  } catch (error) {
+    console.error("Fetch error:", error);
+    throw error;
+  }
+};
+
 const greenTheme = createTheme({
   palette: {
     primary: {
@@ -148,7 +178,6 @@ export default function AllPost() {
   });
 
   const navigate = useNavigate();
-  const API_URL = "http://localhost:8000";
 
   useEffect(() => {
     const savedUser = localStorage.getItem("user");
@@ -156,29 +185,62 @@ export default function AllPost() {
   }, []);
 
   useEffect(() => {
-    fetch(`${API_URL}/api/topics`)
-      .then((res) => res.json())
-      .then((data) => setTopics(data || []))
-      .catch(console.error);
-  }, []);
+  const fetchTopics = async () => {
+    try {
+      const res = await authFetch(`${API_URL}/api/topics`);
+      const data = await res.json();
+      console.log("Topics fetched:", data);
+
+      if (Array.isArray(data)) {
+        setTopics(data);
+      } else if (data && data.topics && Array.isArray(data.topics)) {
+        setTopics(data.topics);
+      } else {
+        console.warn("Unexpected topics response format:", data);
+        setTopics([]);
+      }
+    } catch (error) {
+      console.error("Error fetching topics:", error);
+      setTopics([]);
+    }
+  };
+  
+  fetchTopics();
+}, []);
 
   // Fetch posts based on filter
-  useEffect(() => {
-    if (selectedFilter === "my" && user) {
-      fetch(`${API_URL}/api/posts/user/${user.id}`)
-        .then((res) => res.json())
-        .then((data) => setPosts(data || []))
-        .catch(console.error);
-    } else {
-      fetch(`${API_URL}/api/posts`)
-        .then((res) => res.json())
-        .then((data) => setPosts(data || []))
-        .catch(console.error);
+ useEffect(() => {
+  const fetchPosts = async () => {
+    try {
+      const url = selectedFilter === "my" && user 
+        ? `${API_URL}/api/posts/user/${user.id}` 
+        : `${API_URL}/api/posts`;
+      console.log("Fetching posts from:", url);
+      
+      const res = await authFetch(url);
+      const data = await res.json();
+      console.log("Posts fetched:", data);
+
+      if (Array.isArray(data)) {
+        setPosts(data);
+      } else if (data && data.posts && Array.isArray(data.posts)) {
+        setPosts(data.posts);
+      } else {
+        setPosts([]);
+      }
+    } catch (error) {
+      console.error("Failed to fetch posts:", error);
+      setPosts([]);
     }
-  }, [selectedFilter, user]);
+  };
+  
+  fetchPosts();
+}, [selectedFilter, user]);
 
   useEffect(() => {
-    posts.forEach(p => fetchComments(p.id));
+    if (Array.isArray(posts)) {
+      posts.forEach(p => fetchComments(p.id));
+    }
   }, [posts]);
 
   const handleNewPostChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -190,51 +252,63 @@ export default function AllPost() {
   };
 
   const getTopicName = (topic_id: number) => {
+    if (!Array.isArray(topics)) return "Unknown";
     const topic = topics.find((t) => t.id === topic_id);
     return topic ? topic.title : "Unknown";
   };
 
   const fetchComments = async (postId: number) => {
-    const res = await fetch(`${API_URL}/api/comments/${postId}`);
+  try {
+    const res = await authFetch(`${API_URL}/api/comments/${postId}`);
     const data = await res.json();
-    setComments(prev => ({
-      ...prev,
-      [postId]: data
-    }));
-  };
+    setComments(prev => ({ ...prev, [postId]: Array.isArray(data) ? data : [] }));
+  } catch (error) {
+    console.error("Error fetching comments:", error);
+    setComments(prev => ({ ...prev, [postId]: [] }));
+  }
+};
 
-  const handleReply = async (postId:number, parentId:number) => {
+// Reply to comment function
+  const handleReply = async (postId: number, parentId: number) => {
     if (!user || !replyText[parentId]) return;
 
-    const res = await fetch(`${API_URL}/api/comments`, {
+    try {
+      const res = await fetch(`${API_URL}/api/comments`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`
+        },
         body: JSON.stringify({
-        post_id: postId,
-        user_id: user.id,
-        content: replyText[parentId],
-        parent_comment_id: parentId
+          post_id: postId,
+          content: replyText[parentId],
+          parent_comment_id: parentId
         })
-    });
+      });
 
-    const created = await res.json();
+      const created = await res.json();
 
-    setComments(prev => ({
+      setComments(prev => ({
         ...prev,
         [postId]: [...(prev[postId] || []), created]
-    }));
+      }));
 
-    setReplyText(prev => ({
+      setReplyText(prev => ({
         ...prev,
         [parentId]: ""
-    }));
+      }));
 
-    setReplyOpen(prev => ({
+      setReplyOpen(prev => ({
         ...prev,
         [parentId]: false
-    }));
+      }));
+    } catch (error) {
+      console.error("Error creating reply:", error);
+    }
   };
 
+
+  //Post Create function
   const handleCreatePost = async () => {
     if (!user || !newPost.topic_id) {
       alert("Please select a topic or ensure you are logged in.");
@@ -244,13 +318,15 @@ export default function AllPost() {
     try {
       const res = await fetch(`${API_URL}/api/posts`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`
+        },
         body: JSON.stringify({
           title: newPost.title,
           content: newPost.content,
-          topic_id: newPost.topic_id,
-          user_id: user.id,
-        }),
+          topic_id: newPost.topic_id
+        })
       });
 
       if (!res.ok) {
@@ -265,28 +341,35 @@ export default function AllPost() {
     }
   };
 
+  //Comment Crate function
   const handleCreateComment = async (postId: number) => {
     if (!user || !newComment[postId]) return;
 
-    const res = await fetch(`${API_URL}/api/comments`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        post_id: postId,
-        user_id: user.id,
-        content: newComment[postId]
-      })
-    });
+    try {
+      const res = await fetch(`${API_URL}/api/comments`, {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`
+        },
+        body: JSON.stringify({
+          post_id: postId,
+          content: newComment[postId]
+        })
+      });
 
-    const created = await res.json();
-    setComments(prev => ({
-      ...prev,
-      [postId]: [...(prev[postId] || []), created]
-    }));
-    setNewComment(prev => ({
-      ...prev,
-      [postId]: ""
-    }));
+      const created = await res.json();
+      setComments(prev => ({
+        ...prev,
+        [postId]: [...(prev[postId] || []), created]
+      }));
+      setNewComment(prev => ({
+        ...prev,
+        [postId]: ""
+      }));
+    } catch (error) {
+      console.error("Error creating comment:", error);
+    }
   };
 
   // Delete post function
@@ -294,8 +377,11 @@ export default function AllPost() {
     if (!user) return;
 
     try {
-      const res = await fetch(`${API_URL}/api/posts/${postId}?user_id=${user.id}`, {
+      const res = await fetch(`${API_URL}/api/posts/${postId}`, {
         method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`
+        }
       });
 
       if (!res.ok) {
@@ -304,7 +390,6 @@ export default function AllPost() {
         return;
       }
 
-      // Remove post from state
       setPosts(posts.filter(p => p.id !== postId));
       setDeletePostDialog({ open: false, postId: null });
     } catch (err) {
@@ -317,8 +402,11 @@ export default function AllPost() {
     if (!user) return;
 
     try {
-      const res = await fetch(`${API_URL}/api/comments/${commentId}?user_id=${user.id}`, {
+      const res = await fetch(`${API_URL}/api/comments/${commentId}`, {
         method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`
+        }
       });
 
       if (!res.ok) {
@@ -327,10 +415,9 @@ export default function AllPost() {
         return;
       }
 
-      // Remove comment from state
       setComments(prev => ({
         ...prev,
-        [postId]: prev[postId].filter(c => c.id !== commentId)
+        [postId]: prev[postId] ? prev[postId].filter(c => c.id !== commentId) : []
       }));
       setDeleteCommentDialog({ open: false, commentId: null, postId: null });
     } catch (err) {
@@ -351,33 +438,62 @@ export default function AllPost() {
     : posts;
 
   // Fetch likes for each post
-  const fetchLikes = async (postId: number) => {
-    const res = await fetch(`${API_URL}/api/posts/${postId}/likes`);
+const fetchLikes = async (postId: number) => {
+  try {
+    const res = await authFetch(`${API_URL}/api/posts/${postId}/likes`);
     const data = await res.json();
-    setLikes(prev => ({ ...prev, [postId]: { count: data.likes, liked: false } }));
-  };
+    setLikes(prev => ({ 
+      ...prev, 
+      [postId]: { 
+        count: data.likes || 0, 
+        liked: data.liked || false 
+      } 
+    }));
+  } catch (error) {
+    console.error("Error fetching likes:", error);
+    setLikes(prev => ({ 
+      ...prev, 
+      [postId]: { count: 0, liked: false } 
+    }));
+  }
+};
 
   useEffect(() => {
-    posts.forEach(p => fetchLikes(p.id));
+    if (Array.isArray(posts)) {
+      posts.forEach(p => fetchLikes(p.id));
+    }
   }, [posts]);
 
   // Handle like/unlike post
-  const handleToggleLike = async (postId: number) => {
-    if (!user) return;
+const handleToggleLike = async (postId: number) => {
+  if (!user) return;
 
+  try {
     const res = await fetch(`${API_URL}/api/posts/${postId}/like`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: user.id })
+      method: "POST",
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${localStorage.getItem("token")}`  
+      },
+      body: JSON.stringify({})
     });
+
+    if (!res.ok) {
+      if (res.status === 401) {
+        console.error("Unauthorized - token might be expired");
+        return;
+      }
+    }
 
     const data = await res.json();
     setLikes(prev => ({
-        ...prev,
-        [postId]: { count: data.likes, liked: data.liked }
+      ...prev,
+      [postId]: { count: data.likes || 0, liked: data.liked || false }
     }));
-  };
-
+  } catch (error) {
+    console.error("Error toggling like:", error);
+  }
+};
   return (
     <ThemeProvider theme={greenTheme}>
       <CssBaseline /> 
@@ -460,37 +576,41 @@ export default function AllPost() {
           <Divider sx={{ my: 2, backgroundColor: '#81c784' }} />
 
           {/* Topic buttons */}
-          {topics.map((topic) => (
-            <Button
-              key={topic.id}
-              fullWidth
-              variant={selectedTopic === topic.id ? "contained" : "outlined"}
-              onClick={() => {
-                setSelectedTopic(topic.id);
-                setSelectedFilter("all");
-              }}
-              sx={{ 
-                mb: 1.5,
-                py: 1.2,
-                fontSize: '12px',
-                ...(selectedTopic === topic.id && {
-                  backgroundColor: '#2e7d32',
-                  '&:hover': {
-                    backgroundColor: '#1b5e20',
-                  }
-                })
-              }}
-            >
-              {topic.title}
-            </Button>
-          ))}
+          {Array.isArray(topics) && topics.length > 0 ? (
+            topics.map((topic) => (
+              <Button
+                key={topic.id}
+                fullWidth
+                variant={selectedTopic === topic.id ? "contained" : "outlined"}
+                onClick={() => {
+                  setSelectedTopic(Number(topic.id));
+                  setSelectedFilter("all");
+                }}
+                sx={{ 
+                  mb: 1.5,
+                  py: 1.2,
+                  fontSize: '12px',
+                  ...(selectedTopic === topic.id && {
+                    backgroundColor: '#2e7d32',
+                    '&:hover': { backgroundColor: '#1b5e20' }
+                  })
+                }}
+              >
+                {topic.title}
+              </Button>
+            ))
+          ) : (
+            <Typography sx={{ color: '#666', textAlign: 'center', py: 2, fontSize: '12px' }}>
+              No topics available
+            </Typography>
+          )}
 
           <Button
             variant="contained"
             onClick={() => navigate("/topics")}
             fullWidth
             sx={{
-              backgroundColor: 'success',
+              backgroundColor: '#2e7d32',
               '&:hover': {
                 backgroundColor: '#1b5e20',
               },
@@ -518,6 +638,7 @@ export default function AllPost() {
             }}
             onClick={() => {
               localStorage.removeItem("user");
+              localStorage.removeItem("token");
               setUser(null);
               navigate("/");
             }}
@@ -573,7 +694,7 @@ export default function AllPost() {
               <MenuItem value={0} disabled>
                 Select Topic
               </MenuItem>
-              {topics.map((topic) => (
+              {Array.isArray(topics) && topics.map((topic) => (
                 <MenuItem key={topic.id} value={topic.id}>
                   {topic.title}
                 </MenuItem>
@@ -653,17 +774,17 @@ export default function AllPost() {
             {selectedFilter === "my" 
               ? "My Posts"
               : selectedTopic
-                ? `Posts in "${topics.find((t) => t.id === selectedTopic)?.title}"`
+                ? `Posts in "${Array.isArray(topics) ? (topics.find((t) => t.id === selectedTopic)?.title || "Unknown") : "Unknown"}"`
                 : "All Posts"}
           </Typography>
 
-          {displayedPosts.length === 0 && (
+          {(!displayedPosts || displayedPosts.length === 0) && (
             <Typography sx={{ color: '#666', fontStyle: 'italic', fontSize: '1.2rem' }}>
               No posts yet.
             </Typography>
           )}
 
-          {displayedPosts.map((post) => (
+          {Array.isArray(displayedPosts) && displayedPosts.map((post) => (
             <Paper
               key={post.id}
               elevation={2}

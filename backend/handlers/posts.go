@@ -287,3 +287,95 @@ func ToggleLike(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"likes": count, "liked": !liked})
 }
+
+// Update post
+func UpdatePost(c *gin.Context) {
+	postIDStr := c.Param("id")
+	postID, err := strconv.Atoi(postIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid post ID"})
+		return
+	}
+
+	// Get logged in user
+	userIDValue, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	var userID int
+	switch v := userIDValue.(type) {
+	case float64:
+		userID = int(v)
+	case int:
+		userID = v
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid user ID type"})
+		return
+	}
+
+	// Request body
+	var input struct {
+		Title   string `json:"title"`
+		Content string `json:"content"`
+		TopicID int    `json:"topic_id"`
+	}
+
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	// Check ownership
+	var ownerID int
+	err = db.DB.QueryRow(
+		"SELECT user_id FROM posts WHERE id = $1",
+		postID,
+	).Scan(&ownerID)
+
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "post not found"})
+		return
+	}
+
+	if ownerID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "you can only update your own posts"})
+		return
+	}
+
+	// Update post
+	var updatedAt time.Time
+	err = db.DB.QueryRow(
+		`UPDATE posts 
+		 SET title=$1, content=$2, topic_id=$3 
+		 WHERE id=$4 
+		 RETURNING created_at`,
+		input.Title, input.Content, input.TopicID, postID,
+	).Scan(&updatedAt)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update post"})
+		return
+	}
+
+	// Get username
+	var username string
+	err = db.DB.QueryRow(
+		"SELECT username FROM users WHERE id = $1",
+		userID,
+	).Scan(&username)
+
+	if err != nil {
+		username = "Unknown"
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":         postID,
+		"title":      input.Title,
+		"content":    input.Content,
+		"topic_id":   input.TopicID,
+		"username":   username,
+		"created_at": updatedAt,
+	})
+}

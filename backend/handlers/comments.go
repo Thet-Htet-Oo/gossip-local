@@ -147,3 +147,75 @@ func DeleteComment(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Comment deleted successfully"})
 }
+
+// Update comment
+func UpdateComment(c *gin.Context) {
+
+	commentID := c.Param("id")
+
+	var input struct {
+		Content string `json:"content"`
+	}
+
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid input"})
+		return
+	}
+
+	userIDValue, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	reqUserID := int(userIDValue.(float64))
+
+	// Check owner
+	var ownerID int
+	err := db.DB.QueryRow(
+		"SELECT user_id FROM comments WHERE id = $1",
+		commentID,
+	).Scan(&ownerID)
+
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Comment not found"})
+		return
+	}
+
+	if ownerID != reqUserID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "You can only update your own comments"})
+		return
+	}
+
+	// Update comment
+	var updated Comment
+
+	err = db.DB.QueryRow(`
+	UPDATE comments
+	SET content=$1
+	WHERE id=$2
+	RETURNING id, post_id, user_id, content, parent_comment_id, created_at
+	`,
+		input.Content,
+		commentID,
+	).Scan(
+		&updated.ID,
+		&updated.PostID,
+		&updated.UserID,
+		&updated.Content,
+		&updated.ParentCommentID,
+		&updated.CreatedAt,
+	)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	db.DB.QueryRow(
+		"SELECT username FROM users WHERE id=$1",
+		updated.UserID,
+	).Scan(&updated.Username)
+
+	c.JSON(http.StatusOK, updated)
+}

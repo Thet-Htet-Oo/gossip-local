@@ -36,7 +36,7 @@ func main() {
 			"POST",
 			"PUT",
 			"DELETE",
-			"OPTIONS", 
+			"OPTIONS",
 		},
 		AllowHeaders: []string{
 			"Origin",
@@ -44,16 +44,16 @@ func main() {
 			"Content-Length",
 			"Accept-Encoding",
 			"X-CSRF-Token",
-			"Authorization", 
+			"Authorization",
 			"Accept",
 			"Cache-Control",
 			"X-Requested-With",
 		},
-		AllowCredentials: true,           
-		MaxAge:           12 * time.Hour, 
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
 	}))
 
-	// Public routes 
+	// Public routes
 	r.POST("/login", handlers.Login)
 
 	// Protected routes
@@ -63,15 +63,18 @@ func main() {
 		api.GET("/topics", handlers.GetTopics)
 		api.POST("/topics", handlers.CreateTopic)
 		api.DELETE("/topics/:id", handlers.DeleteTopic)
+		api.PUT("/topics/:id", handlers.UpdateTopic)
 
 		api.GET("/posts", handlers.GetPosts)
 		api.POST("/posts", handlers.CreatePost)
 		api.DELETE("/posts/:id", handlers.DeletePost)
 		api.GET("/posts/user/:user_id", handlers.GetUserPosts)
+		api.PUT("/posts/:id", handlers.UpdatePost)
 
 		api.GET("/comments/:post_id", handlers.GetComments)
 		api.POST("/comments", handlers.CreateComment)
 		api.DELETE("/comments/:id", handlers.DeleteComment)
+		api.PUT("/comments/:id", handlers.UpdateComment)
 
 		api.GET("/posts/:post_id/likes", handlers.GetPostLikes)
 		api.POST("/posts/:post_id/like", handlers.ToggleLike)

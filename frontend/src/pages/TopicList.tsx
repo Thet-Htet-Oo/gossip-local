@@ -17,6 +17,7 @@ import {
   CircularProgress
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
+import EditIcon from "@mui/icons-material/Edit";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import AddIcon from "@mui/icons-material/Add";
 
@@ -29,6 +30,7 @@ type Topic = {
 export default function Topics() {
   const [topics, setTopics] = useState<Topic[]>([]);
   const [newTopic, setNewTopic] = useState({ title: "", description: "" });
+  const [editingTopic, setEditingTopic] = useState<Topic | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,7 +38,6 @@ export default function Topics() {
 
   const API_URL = "http://localhost:8000";
 
- 
   const authFetch = async (url: string, options: RequestInit = {}) => {
     const token = localStorage.getItem("token");
     
@@ -56,6 +57,38 @@ export default function Topics() {
     });
   };
 
+  const handleUpdateTopic = async () => {
+    if (!editingTopic) return;
+
+    if (!editingTopic.title.trim() || !editingTopic.description.trim()) {
+      setError("Title and Description are required!");
+      return;
+    }
+
+    try {
+      const res = await authFetch(`${API_URL}/api/topics/${editingTopic.id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          title: editingTopic.title,
+          description: editingTopic.description
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to update topic: ${res.status}`);
+      }
+
+      const updated: Topic = await res.json();
+      setTopics(topics.map(t => t.id === updated.id ? updated : t));
+      setEditingTopic(null);
+      setSuccess("Topic updated successfully!");
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      console.error(err);
+      setError("Failed to update topic. Please try again.");
+    }
+  };
+
   // Fetch topics 
   const fetchTopics = async () => {
     setLoading(true);
@@ -70,11 +103,7 @@ export default function Topics() {
         return;
       }
 
-      const res = await fetch(`${API_URL}/api/topics`, {
-        headers: {
-          "Authorization": `Bearer ${token}`
-        }
-      });
+      const res = await authFetch(`${API_URL}/api/topics`);
       
       if (!res.ok) {
         if (res.status === 401) {
@@ -134,12 +163,8 @@ export default function Topics() {
         return;
       }
 
-      const res = await fetch(`${API_URL}/api/topics`, {
+      const res = await authFetch(`${API_URL}/api/topics`, {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
         body: JSON.stringify(newTopic),
       });
 
@@ -181,11 +206,8 @@ export default function Topics() {
         return;
       }
 
-      const res = await fetch(`${API_URL}/api/topics/${topicId}`, { 
+      const res = await authFetch(`${API_URL}/api/topics/${topicId}`, {
         method: "DELETE",
-        headers: {
-          "Authorization": `Bearer ${token}`
-        }
       });
       
       if (!res.ok) {
@@ -214,7 +236,6 @@ export default function Topics() {
     }
   };
 
- 
   const token = localStorage.getItem("token");
   const user = localStorage.getItem("user");
 
@@ -279,83 +300,183 @@ export default function Topics() {
           </Alert>
         )}
 
-        {/* Create Topic Card */}
-        <Paper 
-          elevation={3} 
-          sx={{ 
-            p: 4, 
-            borderRadius: 3, 
-            mb: 4, 
-            boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-            backgroundColor: '#ffffff'
-          }}
-        >
-          <Typography variant="h5" gutterBottom sx={{ color: "#2e7d32", fontWeight: 'bold', mb: 3 }}>
-            Create a New Topic
-          </Typography>
-
-          <TextField
-            label="Title"
-            name="title"
-            value={newTopic.title}
-            onChange={handleChange}
-            fullWidth
-            margin="normal"
-            required
-            sx={{
-              '& .MuiOutlinedInput-root': { 
-                '&.Mui-focused fieldset': { 
-                  borderColor: '#2e7d32',
-                  borderWidth: 2
-                } 
-              },
-              '& .MuiInputLabel-root.Mui-focused': { 
-                color: '#2e7d32',
-                fontWeight: 'bold'
-              }
-            }}
-          />
-
-          <TextField
-            label="Description"
-            name="description"
-            value={newTopic.description}
-            onChange={handleChange}
-            fullWidth
-            multiline
-            rows={3}
-            margin="normal"
-            required
-            sx={{
-              '& .MuiOutlinedInput-root': { 
-                '&.Mui-focused fieldset': { 
-                  borderColor: '#2e7d32',
-                  borderWidth: 2
-                } 
-              },
-              '& .MuiInputLabel-root.Mui-focused': { 
-                color: '#2e7d32',
-                fontWeight: 'bold'
-              }
-            }}
-          />
-
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={handleCreateTopic}
+        {/* Edit Topic Form - Shown when editing */}
+        {editingTopic && (
+          <Paper 
+            elevation={3} 
             sx={{ 
-              mt: 3, 
-              backgroundColor: "#2e7d32", 
-              "&:hover": { backgroundColor: "#1b5e20" },
-              py: 1.2,
-              px: 4,
-              fontSize: '1rem'
+              p: 4, 
+              borderRadius: 3, 
+              mb: 4, 
+              boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+              backgroundColor: '#ffffff',
+              border: '2px solid #2e7d32'
             }}
           >
-            Add Topic
-          </Button>
-        </Paper>
+            <Typography variant="h5" gutterBottom sx={{ color: "#2e7d32", fontWeight: 'bold', mb: 3 }}>
+              Edit Topic
+            </Typography>
+
+            <TextField
+              label="Title"
+              value={editingTopic.title}
+              onChange={(e) => setEditingTopic({ ...editingTopic, title: e.target.value })}
+              fullWidth
+              margin="normal"
+              required
+              sx={{
+                '& .MuiOutlinedInput-root': { 
+                  '&.Mui-focused fieldset': { 
+                    borderColor: '#2e7d32',
+                    borderWidth: 2
+                  } 
+                },
+                '& .MuiInputLabel-root.Mui-focused': { 
+                  color: '#2e7d32',
+                  fontWeight: 'bold'
+                }
+              }}
+            />
+
+            <TextField
+              label="Description"
+              value={editingTopic.description}
+              onChange={(e) => setEditingTopic({ ...editingTopic, description: e.target.value })}
+              fullWidth
+              multiline
+              rows={3}
+              margin="normal"
+              required
+              sx={{
+                '& .MuiOutlinedInput-root': { 
+                  '&.Mui-focused fieldset': { 
+                    borderColor: '#2e7d32',
+                    borderWidth: 2
+                  } 
+                },
+                '& .MuiInputLabel-root.Mui-focused': { 
+                  color: '#2e7d32',
+                  fontWeight: 'bold'
+                }
+              }}
+            />
+
+            <Box sx={{ display: 'flex', gap: 2, mt: 3 }}>
+              <Button
+                variant="contained"
+                onClick={handleUpdateTopic}
+                sx={{ 
+                  backgroundColor: "#2e7d32", 
+                  "&:hover": { backgroundColor: "#1b5e20" },
+                  py: 1.2,
+                  px: 4,
+                  fontSize: '1rem'
+                }}
+              >
+                Update Topic
+              </Button>
+
+              <Button
+                variant="outlined"
+                onClick={() => setEditingTopic(null)}
+                sx={{ 
+                  borderColor: "#d32f2f", 
+                  color: "#d32f2f",
+                  py: 1.2,
+                  px: 4,
+                  fontSize: '1rem',
+                  '&:hover': { 
+                    backgroundColor: '#d32f2f', 
+                    color: 'white',
+                    borderColor: '#d32f2f'
+                  }
+                }}
+              >
+                Cancel
+              </Button>
+            </Box>
+          </Paper>
+        )}
+
+        {/* Create Topic Card - Hide when editing */}
+        {!editingTopic && (
+          <Paper 
+            elevation={3} 
+            sx={{ 
+              p: 4, 
+              borderRadius: 3, 
+              mb: 4, 
+              boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+              backgroundColor: '#ffffff'
+            }}
+          >
+            <Typography variant="h5" gutterBottom sx={{ color: "#2e7d32", fontWeight: 'bold', mb: 3 }}>
+              Create a New Topic
+            </Typography>
+
+            <TextField
+              label="Title"
+              name="title"
+              value={newTopic.title}
+              onChange={handleChange}
+              fullWidth
+              margin="normal"
+              required
+              sx={{
+                '& .MuiOutlinedInput-root': { 
+                  '&.Mui-focused fieldset': { 
+                    borderColor: '#2e7d32',
+                    borderWidth: 2
+                  } 
+                },
+                '& .MuiInputLabel-root.Mui-focused': { 
+                  color: '#2e7d32',
+                  fontWeight: 'bold'
+                }
+              }}
+            />
+
+            <TextField
+              label="Description"
+              name="description"
+              value={newTopic.description}
+              onChange={handleChange}
+              fullWidth
+              multiline
+              rows={3}
+              margin="normal"
+              required
+              sx={{
+                '& .MuiOutlinedInput-root': { 
+                  '&.Mui-focused fieldset': { 
+                    borderColor: '#2e7d32',
+                    borderWidth: 2
+                  } 
+                },
+                '& .MuiInputLabel-root.Mui-focused': { 
+                  color: '#2e7d32',
+                  fontWeight: 'bold'
+                }
+              }}
+            />
+
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={handleCreateTopic}
+              sx={{ 
+                mt: 3, 
+                backgroundColor: "#2e7d32", 
+                "&:hover": { backgroundColor: "#1b5e20" },
+                py: 1.2,
+                px: 4,
+                fontSize: '1rem'
+              }}
+            >
+              Add Topic
+            </Button>
+          </Paper>
+        )}
 
         <Divider sx={{ mb: 4, backgroundColor: '#81c784', borderWidth: 1 }} />
 
@@ -394,7 +515,11 @@ export default function Topics() {
                       '&:hover': { 
                         backgroundColor: '#f1f8e9',
                         transition: 'background-color 0.3s'
-                      } 
+                      },
+                      ...(editingTopic?.id === topic.id && {
+                        backgroundColor: '#e8f5e9',
+                        '&:hover': { backgroundColor: '#c8e6c9' }
+                      })
                     }}
                   >
                     <TableCell sx={{ color: '#2e7d32' }}>{topic.id}</TableCell>
@@ -403,10 +528,35 @@ export default function Topics() {
                     <TableCell>
                       <Button
                         variant="outlined"
+                        color="primary"
+                        size="small"
+                        startIcon={<EditIcon />}
+                        onClick={() => setEditingTopic(topic)}
+                        disabled={editingTopic !== null && editingTopic.id !== topic.id}
+                        sx={{ 
+                          mr: 1,
+                          borderColor: '#2e7d32',
+                          color: '#2e7d32',
+                          '&:hover': { 
+                            backgroundColor: '#2e7d32', 
+                            color: 'white',
+                            borderColor: '#2e7d32'
+                          },
+                          '&.Mui-disabled': {
+                            borderColor: '#cccccc',
+                            color: '#999999'
+                          }
+                        }}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        variant="outlined"
                         color="error"
                         size="small"
                         startIcon={<DeleteIcon />}
                         onClick={() => handleDeleteTopic(topic.id)}
+                        disabled={editingTopic !== null}
                         sx={{ 
                           '&:hover': { 
                             backgroundColor: '#d32f2f', 
@@ -414,7 +564,11 @@ export default function Topics() {
                             borderColor: '#d32f2f'
                           },
                           borderColor: '#d32f2f',
-                          color: '#d32f2f'
+                          color: '#d32f2f',
+                          '&.Mui-disabled': {
+                            borderColor: '#cccccc',
+                            color: '#999999'
+                          }
                         }}
                       >
                         Delete

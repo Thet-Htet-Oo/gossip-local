@@ -70,3 +70,43 @@ func DeleteTopic(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Topic deleted"})
 }
+
+func UpdateTopic(c *gin.Context) {
+
+	topicID := c.Param("id")
+
+	var input struct {
+		Title       string `json:"title"`
+		Description string `json:"description"`
+	}
+
+	// Validate request
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	var updated Topic
+
+	// Update topic
+	err := db.DB.QueryRow(
+		`UPDATE topics 
+		 SET title=$1, description=$2 
+		 WHERE id=$3 
+		 RETURNING id, title, description`,
+		input.Title,
+		input.Description,
+		topicID,
+	).Scan(
+		&updated.ID,
+		&updated.Title,
+		&updated.Description,
+	)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, updated)
+}

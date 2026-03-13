@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { 
-  SelectChangeEvent, 
-  TextField, 
-  Button, 
-  Typography, 
-  Divider, 
-  Select, 
-  MenuItem, 
+import {
+  SelectChangeEvent,
+  TextField,
+  Button,
+  Typography,
+  Divider,
+  Select,
+  MenuItem,
   Box,
   IconButton,
   Dialog,
@@ -21,6 +21,7 @@ import {
   Paper
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
+import EditIcon from "@mui/icons-material/Edit";
 import ThumbUpIcon from "@mui/icons-material/ThumbUp";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import SendIcon from "@mui/icons-material/Send";
@@ -59,18 +60,18 @@ const authFetch = async (url: string, options: RequestInit = {}) => {
 const greenTheme = createTheme({
   palette: {
     primary: {
-      main: '#2e7d32', // Dark green
-      light: '#4caf50', // Medium green
-      dark: '#1b5e20', // Deeper green
+      main: '#2e7d32',
+      light: '#4caf50',
+      dark: '#1b5e20',
     },
     secondary: {
-      main: '#81c784', // Light green
+      main: '#81c784',
     },
     success: {
-      main: '#2e7d32', // Dark green
+      main: '#2e7d32',
     },
     background: {
-      default: '#e8f5e9', // Very light green
+      default: '#e8f5e9',
       paper: '#ffffff',
     },
   },
@@ -166,7 +167,7 @@ export default function AllPost() {
   const [replyOpen, setReplyOpen] = useState<{[key:number]:boolean}>({});
   const [replyText, setReplyText] = useState<{[key:number]:string}>({});
   
-  // Delete confirmation dialogs
+  // Delete dialogs
   const [deletePostDialog, setDeletePostDialog] = useState<{ open: boolean; postId: number | null }>({
     open: false,
     postId: null
@@ -177,6 +178,24 @@ export default function AllPost() {
     postId: null
   });
 
+  // Edit dialogs
+  const [editPostDialog, setEditPostDialog] = useState<{ open: boolean; post: Post | null }>({
+    open: false,
+    post: null
+  });
+  const [editCommentDialog, setEditCommentDialog] = useState<{ open: boolean; comment: Comment | null; postId: number | null }>({
+    open: false,
+    comment: null,
+    postId: null
+  });
+
+  // Edit form data
+  const [editPostData, setEditPostData] = useState<{ title: string; content: string }>({
+    title: "",
+    content: ""
+  });
+  const [editCommentData, setEditCommentData] = useState<string>("");
+
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -185,61 +204,66 @@ export default function AllPost() {
   }, []);
 
   useEffect(() => {
-  const fetchTopics = async () => {
-    try {
-      const res = await authFetch(`${API_URL}/api/topics`);
-      const data = await res.json();
-      console.log("Topics fetched:", data);
+    const fetchTopics = async () => {
+      try {
+        const res = await authFetch(`${API_URL}/api/topics`);
+        const data = await res.json();
+        console.log("Topics fetched:", data);
 
-      if (Array.isArray(data)) {
-        setTopics(data);
-      } else if (data && data.topics && Array.isArray(data.topics)) {
-        setTopics(data.topics);
-      } else {
-        console.warn("Unexpected topics response format:", data);
+        if (Array.isArray(data)) {
+          setTopics(data);
+        } else if (data && data.topics && Array.isArray(data.topics)) {
+          setTopics(data.topics);
+        } else {
+          console.warn("Unexpected topics response format:", data);
+          setTopics([]);
+        }
+      } catch (error) {
+        console.error("Error fetching topics:", error);
         setTopics([]);
       }
-    } catch (error) {
-      console.error("Error fetching topics:", error);
-      setTopics([]);
-    }
-  };
-  
-  fetchTopics();
-}, []);
+    };
+    
+    fetchTopics();
+  }, []);
 
-  // Fetch posts based on filter
- useEffect(() => {
-  const fetchPosts = async () => {
-    try {
-      const url = selectedFilter === "my" && user 
-        ? `${API_URL}/api/posts/user/${user.id}` 
-        : `${API_URL}/api/posts`;
-      console.log("Fetching posts from:", url);
-      
-      const res = await authFetch(url);
-      const data = await res.json();
-      console.log("Posts fetched:", data);
+  useEffect(() => {
+    const fetchPosts = async () => {
+      try {
+        const url = selectedFilter === "my" && user 
+          ? `${API_URL}/api/posts/user/${user.id}` 
+          : `${API_URL}/api/posts`;
+        console.log("Fetching posts from:", url);
+        
+        const res = await authFetch(url);
+        const data = await res.json();
+        console.log("Posts fetched:", data);
 
-      if (Array.isArray(data)) {
-        setPosts(data);
-      } else if (data && data.posts && Array.isArray(data.posts)) {
-        setPosts(data.posts);
-      } else {
+        if (Array.isArray(data)) {
+          setPosts(data);
+        } else if (data && data.posts && Array.isArray(data.posts)) {
+          setPosts(data.posts);
+        } else {
+          setPosts([]);
+        }
+      } catch (error) {
+        console.error("Failed to fetch posts:", error);
         setPosts([]);
       }
-    } catch (error) {
-      console.error("Failed to fetch posts:", error);
-      setPosts([]);
-    }
-  };
-  
-  fetchPosts();
-}, [selectedFilter, user]);
+    };
+    
+    fetchPosts();
+  }, [selectedFilter, user]);
 
   useEffect(() => {
     if (Array.isArray(posts)) {
       posts.forEach(p => fetchComments(p.id));
+    }
+  }, [posts]);
+
+  useEffect(() => {
+    if (Array.isArray(posts)) {
+      posts.forEach(p => fetchLikes(p.id));
     }
   }, [posts]);
 
@@ -258,32 +282,27 @@ export default function AllPost() {
   };
 
   const fetchComments = async (postId: number) => {
-  try {
-    const res = await authFetch(`${API_URL}/api/comments/${postId}`);
-    const data = await res.json();
-    setComments(prev => ({ ...prev, [postId]: Array.isArray(data) ? data : [] }));
-  } catch (error) {
-    console.error("Error fetching comments:", error);
-    setComments(prev => ({ ...prev, [postId]: [] }));
-  }
-};
+    try {
+      const res = await authFetch(`${API_URL}/api/comments/${postId}`);
+      const data = await res.json();
+      setComments(prev => ({ ...prev, [postId]: Array.isArray(data) ? data : [] }));
+    } catch (error) {
+      console.error("Error fetching comments:", error);
+      setComments(prev => ({ ...prev, [postId]: [] }));
+    }
+  };
 
-// Reply to comment function
   const handleReply = async (postId: number, parentId: number) => {
     if (!user || !replyText[parentId]) return;
 
     try {
-      const res = await fetch(`${API_URL}/api/comments`, {
+      const res = await authFetch(`${API_URL}/api/comments`, {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`
-        },
         body: JSON.stringify({
           post_id: postId,
           content: replyText[parentId],
           parent_comment_id: parentId
-        })
+        }),
       });
 
       const created = await res.json();
@@ -307,8 +326,6 @@ export default function AllPost() {
     }
   };
 
-
-  //Post Create function
   const handleCreatePost = async () => {
     if (!user || !newPost.topic_id) {
       alert("Please select a topic or ensure you are logged in.");
@@ -316,17 +333,13 @@ export default function AllPost() {
     }
 
     try {
-      const res = await fetch(`${API_URL}/api/posts`, {
+      const res = await authFetch(`${API_URL}/api/posts`, {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`
-        },
         body: JSON.stringify({
           title: newPost.title,
           content: newPost.content,
           topic_id: newPost.topic_id
-        })
+        }),
       });
 
       if (!res.ok) {
@@ -341,21 +354,16 @@ export default function AllPost() {
     }
   };
 
-  //Comment Crate function
   const handleCreateComment = async (postId: number) => {
     if (!user || !newComment[postId]) return;
 
     try {
-      const res = await fetch(`${API_URL}/api/comments`, {
+      const res = await authFetch(`${API_URL}/api/comments`, {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`
-        },
         body: JSON.stringify({
           post_id: postId,
           content: newComment[postId]
-        })
+        }),
       });
 
       const created = await res.json();
@@ -372,16 +380,12 @@ export default function AllPost() {
     }
   };
 
-  // Delete post function
   const handleDeletePost = async (postId: number) => {
     if (!user) return;
 
     try {
-      const res = await fetch(`${API_URL}/api/posts/${postId}`, {
+      const res = await authFetch(`${API_URL}/api/posts/${postId}`, {
         method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`
-        }
       });
 
       if (!res.ok) {
@@ -397,16 +401,12 @@ export default function AllPost() {
     }
   };
 
-  // Delete comment function
   const handleDeleteComment = async (commentId: number, postId: number) => {
     if (!user) return;
 
     try {
-      const res = await fetch(`${API_URL}/api/comments/${commentId}`, {
+      const res = await authFetch(`${API_URL}/api/comments/${commentId}`, {
         method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`
-        }
       });
 
       if (!res.ok) {
@@ -432,68 +432,123 @@ export default function AllPost() {
     }));
   };
 
-  // Filter posts by selected topic
+  const fetchLikes = async (postId: number) => {
+    try {
+      const res = await authFetch(`${API_URL}/api/posts/${postId}/likes`);
+      const data = await res.json();
+      setLikes(prev => ({ 
+        ...prev, 
+        [postId]: { 
+          count: data.likes || 0, 
+          liked: data.liked || false 
+        } 
+      }));
+    } catch (error) {
+      console.error("Error fetching likes:", error);
+      setLikes(prev => ({ 
+        ...prev, 
+        [postId]: { count: 0, liked: false } 
+      }));
+    }
+  };
+
+  // Post edit functions
+  const openEditPostDialog = (post: Post) => {
+    setEditPostDialog({ open: true, post });
+    setEditPostData({ title: post.title, content: post.content });
+  };
+
+  const handleUpdatePost = async () => {
+    if (!editPostDialog.post) return;
+
+    try {
+      const res = await authFetch(`${API_URL}/api/posts/${editPostDialog.post.id}`, {
+        method: "PUT",
+        body: JSON.stringify(editPostData)
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        alert(error.error || "Failed to update post");
+        return;
+      }
+
+      const updatedPost = await res.json();
+      setPosts(prev => prev.map(p => p.id === updatedPost.id ? updatedPost : p));
+      setEditPostDialog({ open: false, post: null });
+    } catch (err) {
+      console.error("Failed to update post:", err);
+    }
+  };
+
+  // Comment edit functions
+  const openEditCommentDialog = (comment: Comment, postId: number) => {
+    setEditCommentDialog({ open: true, comment, postId });
+    setEditCommentData(comment.content);
+  };
+
+  const handleUpdateComment = async () => {
+    if (!editCommentDialog.comment || !editCommentDialog.postId) return;
+
+    try {
+      const res = await authFetch(`${API_URL}/api/comments/${editCommentDialog.comment.id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          content: editCommentData
+        })
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        alert(error.error || "Failed to update comment");
+        return;
+      }
+
+      const updatedComment = await res.json();
+      setComments(prev => ({
+        ...prev,
+        [editCommentDialog.postId!]: prev[editCommentDialog.postId!].map(c => 
+          c.id === updatedComment.id ? updatedComment : c
+        )
+      }));
+      setEditCommentDialog({ open: false, comment: null, postId: null });
+    } catch (err) {
+      console.error("Failed to update comment:", err);
+    }
+  };
+
+  const handleToggleLike = async (postId: number) => {
+    if (!user) return;
+
+    try {
+      const res = await authFetch(`${API_URL}/api/posts/${postId}/like`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+
+      if (!res.ok) {
+        if (res.status === 401) {
+          console.error("Unauthorized - token might be expired");
+          return;
+        }
+        console.error(`Failed to toggle like, status: ${res.status}`);
+        return;
+      }
+
+      const data = await res.json();
+      setLikes(prev => ({
+        ...prev,
+        [postId]: { count: data.likes || 0, liked: data.liked || false },
+      }));
+    } catch (error) {
+      console.error("Error toggling like:", error);
+    }
+  };
+
   const displayedPosts = selectedTopic 
     ? posts.filter((p) => p.topic_id === selectedTopic) 
     : posts;
 
-  // Fetch likes for each post
-const fetchLikes = async (postId: number) => {
-  try {
-    const res = await authFetch(`${API_URL}/api/posts/${postId}/likes`);
-    const data = await res.json();
-    setLikes(prev => ({ 
-      ...prev, 
-      [postId]: { 
-        count: data.likes || 0, 
-        liked: data.liked || false 
-      } 
-    }));
-  } catch (error) {
-    console.error("Error fetching likes:", error);
-    setLikes(prev => ({ 
-      ...prev, 
-      [postId]: { count: 0, liked: false } 
-    }));
-  }
-};
-
-  useEffect(() => {
-    if (Array.isArray(posts)) {
-      posts.forEach(p => fetchLikes(p.id));
-    }
-  }, [posts]);
-
-  // Handle like/unlike post
-const handleToggleLike = async (postId: number) => {
-  if (!user) return;
-
-  try {
-    const res = await fetch(`${API_URL}/api/posts/${postId}/like`, {
-      method: "POST",
-      headers: { 
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${localStorage.getItem("token")}`  
-      },
-      body: JSON.stringify({})
-    });
-
-    if (!res.ok) {
-      if (res.status === 401) {
-        console.error("Unauthorized - token might be expired");
-        return;
-      }
-    }
-
-    const data = await res.json();
-    setLikes(prev => ({
-      ...prev,
-      [postId]: { count: data.likes || 0, liked: data.liked || false }
-    }));
-  } catch (error) {
-    console.error("Error toggling like:", error);
-  }
-};
   return (
     <ThemeProvider theme={greenTheme}>
       <CssBaseline /> 
@@ -522,7 +577,6 @@ const handleToggleLike = async (postId: number) => {
             overflowY: 'auto',
           }}
         >
-          {/* All Posts button */}
           <Button
             fullWidth
             variant={selectedFilter === "all" && selectedTopic === null ? "contained" : "outlined"}
@@ -534,18 +588,11 @@ const handleToggleLike = async (postId: number) => {
               mb: 1.5,
               py: 1.2,
               fontSize: '12px',
-              ...(selectedFilter === "all" && selectedTopic === null && {
-                backgroundColor: '#2e7d32',
-                '&:hover': {
-                  backgroundColor: '#1b5e20',
-                }
-              })
             }}
           >
             All Posts
           </Button>
 
-          {/* My Posts button */}
           {user && (
             <Button
               fullWidth
@@ -558,24 +605,20 @@ const handleToggleLike = async (postId: number) => {
                 mb: 2.5,
                 py: 1.2,
                 fontSize: '12px',
-                ...(selectedFilter === "my" && {
-                  backgroundColor: '#2e7d32',
-                  '&:hover': {
-                    backgroundColor: '#1b5e20',
-                  }
-                })
               }}
             >
               My Posts
             </Button>
           )}
+          
           <Divider sx={{ my: 2, backgroundColor: '#81c784' }} />
+          
           <Typography variant="h5" textAlign="center" sx={{ color: '#2e7d32', fontWeight: 'bold', mb: 2 }}>
             Topics
           </Typography>
+          
           <Divider sx={{ my: 2, backgroundColor: '#81c784' }} />
 
-          {/* Topic buttons */}
           {Array.isArray(topics) && topics.length > 0 ? (
             topics.map((topic) => (
               <Button
@@ -590,10 +633,6 @@ const handleToggleLike = async (postId: number) => {
                   mb: 1.5,
                   py: 1.2,
                   fontSize: '12px',
-                  ...(selectedTopic === topic.id && {
-                    backgroundColor: '#2e7d32',
-                    '&:hover': { backgroundColor: '#1b5e20' }
-                  })
                 }}
               >
                 {topic.title}
@@ -610,10 +649,6 @@ const handleToggleLike = async (postId: number) => {
             onClick={() => navigate("/topics")}
             fullWidth
             sx={{
-              backgroundColor: '#2e7d32',
-              '&:hover': {
-                backgroundColor: '#1b5e20',
-              },
               py: 1.2,
               fontSize: '12px',
               mt: 2
@@ -621,6 +656,7 @@ const handleToggleLike = async (postId: number) => {
           >
             + Add Topic
           </Button>
+          
           <Button
             variant="outlined"
             color="error"
@@ -630,11 +666,6 @@ const handleToggleLike = async (postId: number) => {
               py: 1.2,
               fontSize: '12px',
               borderWidth: 2,
-              '&:hover': {
-                backgroundColor: 'rgb(189, 7, 7)',
-                color: 'white',
-                borderWidth: 2,
-              }
             }}
             onClick={() => {
               localStorage.removeItem("user");
@@ -676,20 +707,13 @@ const handleToggleLike = async (postId: number) => {
             <Typography variant="h5" sx={{ color: '#2e7d32', fontWeight: 'bold', mb: 3 }}>
               Create a New Post
             </Typography>
+            
             <Select
               value={newPost.topic_id}
               onChange={handleTopicSelect}
               displayEmpty
               fullWidth
-              sx={{ 
-                mb: 3,
-                '& .MuiOutlinedInput-root': {
-                  '&.Mui-focused fieldset': {
-                    borderColor: '#2e7d32',
-                    borderWidth: 2,
-                  }
-                }
-              }}
+              sx={{ mb: 3 }}
             >
               <MenuItem value={0} disabled>
                 Select Topic
@@ -700,6 +724,7 @@ const handleToggleLike = async (postId: number) => {
                 </MenuItem>
               ))}
             </Select>
+            
             <TextField
               label="Title"
               name="title"
@@ -707,20 +732,9 @@ const handleToggleLike = async (postId: number) => {
               onChange={handleNewPostChange}
               fullWidth
               margin="normal"
-              sx={{
-                mb: 2,
-                '& .MuiOutlinedInput-root': {
-                  '&.Mui-focused fieldset': {
-                    borderColor: '#2e7d32',
-                    borderWidth: 2,
-                  }
-                },
-                '& .MuiInputLabel-root.Mui-focused': {
-                  color: '#2e7d32',
-                  fontWeight: 'bold',
-                }
-              }}
+              sx={{ mb: 2 }}
             />
+            
             <TextField
               label="Content"
               name="content"
@@ -730,30 +744,15 @@ const handleToggleLike = async (postId: number) => {
               multiline
               rows={4}
               margin="normal"
-              sx={{
-                mb: 2,
-                '& .MuiOutlinedInput-root': {
-                  '&.Mui-focused fieldset': {
-                    borderColor: '#2e7d32',
-                    borderWidth: 2,
-                  }
-                },
-                '& .MuiInputLabel-root.Mui-focused': {
-                  color: '#2e7d32',
-                  fontWeight: 'bold',
-                }
-              }}
+              sx={{ mb: 2 }}
             />
+            
             <Button 
               variant="contained" 
               onClick={handleCreatePost} 
               startIcon={<SendIcon />}
               sx={{ 
                 mt: 2,
-                backgroundColor: '#2e7d32',
-                '&:hover': {
-                  backgroundColor: '#1b5e20',
-                },
                 py: 1.2,
                 px: 4,
                 fontSize: '1rem',
@@ -794,12 +793,19 @@ const handleToggleLike = async (postId: number) => {
                 borderRadius: 3,
                 position: 'relative',
                 backgroundColor: '#ffffff',
-                '&:hover': {
-                  boxShadow: '0 8px 16px rgba(46, 125, 50, 0.2)',
-                }
               }}
             >
-              {/* Delete post button - only show if user owns the post */}
+              {user && user.username === post.username && (
+                <Box sx={{ position: "absolute", top: 16, right: 56, display: "flex", gap: 1 }}>
+                  <IconButton
+                    size="small"
+                    color="primary"
+                    onClick={() => openEditPostDialog(post)}
+                  >
+                    <EditIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+              )}
               {user && user.username === post.username && (
                 <IconButton
                   size="small"
@@ -818,6 +824,7 @@ const handleToggleLike = async (postId: number) => {
               <Typography variant="h5" sx={{ color: '#1b5e20', fontWeight: 'bold', mb: 1 }}>
                 {post.title}
               </Typography>
+              
               <Typography sx={{ color: '#333', fontSize: '1.1rem', mb: 2 }}>
                 {post.content}
               </Typography>
@@ -826,7 +833,6 @@ const handleToggleLike = async (postId: number) => {
                 By <span style={{ color: '#2e7d32', fontWeight: 'bold' }}>{post.username}</span> at {new Date(post.created_at).toLocaleString()}
               </Typography>
 
-              {/* Like and Comment Buttons */}
               <Box sx={{ display: "flex", alignItems: "center", gap: 2, mt: 2, mb: openComments[post.id] ? 2 : 0 }}>
                 <Button
                   startIcon={<ThumbUpIcon />}
@@ -834,15 +840,8 @@ const handleToggleLike = async (postId: number) => {
                   variant={likes[post.id]?.liked ? "contained" : "outlined"}
                   onClick={() => handleToggleLike(post.id)}
                   sx={{
-                    ...(likes[post.id]?.liked && {
-                      backgroundColor: '#2e7d32',
-                      '&:hover': {
-                        backgroundColor: '#1b5e20',
-                      }
-                    }),
                     borderColor: '#2e7d32',
-                    borderRadius: '40px 40px 40px 40px',
-                    color: likes[post.id]?.liked ? 'white' : '#2e7d32',
+                    borderRadius: '40px',
                     py: 1,
                     px: 2,
                   }}
@@ -856,15 +855,8 @@ const handleToggleLike = async (postId: number) => {
                   onClick={() => toggleComments(post.id)}
                   variant={openComments[post.id] ? "contained" : "outlined"}
                   sx={{
-                    ...(openComments[post.id] && {
-                      backgroundColor: '#2e7d32',
-                      '&:hover': {
-                        backgroundColor: '#1b5e20',
-                      }
-                    }),
                     borderColor: '#2e7d32',
-                    borderRadius: '40px 40px 40px 40px',
-                    color: openComments[post.id] ? 'white' : '#2e7d32',
+                    borderRadius: '40px',
                     py: 1,
                     px: 2,
                   }}
@@ -873,10 +865,8 @@ const handleToggleLike = async (postId: number) => {
                 </Button>
               </Box>
 
-              {/* Comments Section */}
               {openComments[post.id] && (
                 <Box sx={{ mt: 3, borderTop: '1px solid #81c784', pt: 3 }}>
-                  {/* Add Comment Input */}
                   {user && (
                     <Box sx={{ display: "flex", gap: 1, mb: 3 }}>
                       <TextField
@@ -885,32 +875,17 @@ const handleToggleLike = async (postId: number) => {
                         placeholder="Write a comment..."
                         value={newComment[post.id] || ""}
                         onChange={(e) => setNewComment({ ...newComment, [post.id]: e.target.value })}
-                        sx={{
-                          '& .MuiOutlinedInput-root': {
-                            '&.Mui-focused fieldset': {
-                              borderColor: '#2e7d32',
-                            }
-                          }
-                        }}
                       />
                       <Button
                         variant="contained"
                         onClick={() => handleCreateComment(post.id)}
                         disabled={!newComment[post.id]}
-                        sx={{
-                          backgroundColor: '#2e7d32',
-                          '&:hover': { backgroundColor: '#1b5e20' },
-                          '&.Mui-disabled': {
-                            backgroundColor: '#cccccc',
-                          }
-                        }}
                       >
                         Comment
                       </Button>
                     </Box>
                   )}
 
-                  {/* Comments List */}
                   {comments[post.id]?.filter(c => !c.parent_comment_id).map((c) => (
                     <Box key={c.id} sx={{ mb: 3 }}>
                       <Paper
@@ -922,25 +897,31 @@ const handleToggleLike = async (postId: number) => {
                           position: "relative"
                         }}
                       >
-                        {/* Delete Comment */}
                         {user && user.id === c.user_id && (
-                          <IconButton
-                            size="small"
-                            color="error"
-                            onClick={() =>
-                              setDeleteCommentDialog({
-                                open: true,
-                                commentId: c.id,
-                                postId: post.id
-                              })
-                            }
-                            sx={{ position: "absolute", right: 8, top: 8 }}
-                          >
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
+                          <Box sx={{ position: "absolute", right: 8, top: 8, display: "flex", gap: 0.5 }}>
+                            <IconButton
+                              size="small"
+                              color="primary"
+                              onClick={() => openEditCommentDialog(c, post.id)}
+                            >
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() =>
+                                setDeleteCommentDialog({
+                                  open: true,
+                                  commentId: c.id,
+                                  postId: post.id
+                                })
+                              }
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </Box>
                         )}
 
-                        {/* Comment header */}
                         <Typography variant="body2" sx={{ mb: 1 }}>
                           <b style={{ color: "#2e7d32", fontSize: "1rem" }}>{c.username}</b> •{" "}
                           <span style={{ color: "#666" }}>
@@ -950,7 +931,6 @@ const handleToggleLike = async (postId: number) => {
 
                         <Typography sx={{ color: "#333", mb: 1 }}>{c.content}</Typography>
 
-                        {/* Reply button */}
                         {user && (
                           <Button
                             size="small"
@@ -963,7 +943,6 @@ const handleToggleLike = async (postId: number) => {
                           </Button>
                         )}
 
-                        {/* Reply Input */}
                         {replyOpen[c.id] && (
                           <Box sx={{ display: "flex", gap: 1, mt: 2 }}>
                             <TextField
@@ -974,26 +953,12 @@ const handleToggleLike = async (postId: number) => {
                               onChange={(e) =>
                                 setReplyText({ ...replyText, [c.id]: e.target.value })
                               }
-                              sx={{
-                                '& .MuiOutlinedInput-root': {
-                                  '&.Mui-focused fieldset': {
-                                    borderColor: '#2e7d32',
-                                  }
-                                }
-                              }}
                             />
                             <Button
                               variant="contained"
                               size="small"
                               onClick={() => handleReply(post.id, c.id)}
                               disabled={!replyText[c.id]}
-                              sx={{
-                                backgroundColor: "#2e7d32",
-                                "&:hover": { backgroundColor: "#1b5e20" },
-                                "&.Mui-disabled": {
-                                  backgroundColor: "#cccccc",
-                                }
-                              }}
                             >
                               Reply
                             </Button>
@@ -1001,7 +966,6 @@ const handleToggleLike = async (postId: number) => {
                         )}
                       </Paper>
 
-                      {/* Replies */}
                       {comments[post.id]?.filter((r) => r.parent_comment_id === c.id).map((r) => (
                         <Box
                           key={r.id}
@@ -1021,22 +985,29 @@ const handleToggleLike = async (postId: number) => {
                               position: "relative"
                             }}
                           >
-                            {/* Delete reply */}
                             {user && user.id === r.user_id && (
-                              <IconButton
-                                size="small"
-                                color="error"
-                                onClick={() =>
-                                  setDeleteCommentDialog({
-                                    open: true,
-                                    commentId: r.id,
-                                    postId: post.id
-                                  })
-                                }
-                                sx={{ position: "absolute", right: 6, top: 6 }}
-                              >
-                                <DeleteIcon fontSize="small" />
-                              </IconButton>
+                              <Box sx={{ position: "absolute", right: 6, top: 6, display: "flex", gap: 0.5 }}>
+                                <IconButton
+                                  size="small"
+                                  color="primary"
+                                  onClick={() => openEditCommentDialog(r, post.id)}
+                                >
+                                  <EditIcon fontSize="small" />
+                                </IconButton>
+                                <IconButton
+                                  size="small"
+                                  color="error"
+                                  onClick={() =>
+                                    setDeleteCommentDialog({
+                                      open: true,
+                                      commentId: r.id,
+                                      postId: post.id
+                                    })
+                                  }
+                                >
+                                  <DeleteIcon fontSize="small" />
+                                </IconButton>
+                              </Box>
                             )}
 
                             <Typography variant="body2" sx={{ mb: 1 }}>
@@ -1065,7 +1036,7 @@ const handleToggleLike = async (postId: number) => {
         </Box>
       </Box>
 
-      {/* Delete Post Confirmation Dialog */}
+      {/* Delete Post Dialog */}
       <Dialog
         open={deletePostDialog.open}
         onClose={() => setDeletePostDialog({ open: false, postId: null })}
@@ -1096,7 +1067,7 @@ const handleToggleLike = async (postId: number) => {
         </DialogActions>
       </Dialog>
 
-      {/* Delete Comment Confirmation Dialog */}
+      {/* Delete Comment Dialog */}
       <Dialog
         open={deleteCommentDialog.open}
         onClose={() => setDeleteCommentDialog({ open: false, commentId: null, postId: null })}
@@ -1124,6 +1095,123 @@ const handleToggleLike = async (postId: number) => {
             size="large"
           >
             Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Edit Post Dialog */}
+      <Dialog
+        open={editPostDialog.open}
+        onClose={() => setEditPostDialog({ open: false, post: null })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ color: '#2e7d32', fontSize: '1.5rem' }}>Edit Post</DialogTitle>
+        <DialogContent>
+          <TextField
+            fullWidth
+            label="Title"
+            margin="normal"
+            value={editPostData.title}
+            onChange={(e) => setEditPostData(prev => ({ ...prev, title: e.target.value }))}
+            sx={{
+              '& .MuiOutlinedInput-root': { 
+                '&.Mui-focused fieldset': { 
+                  borderColor: '#2e7d32',
+                  borderWidth: 2
+                } 
+              },
+              '& .MuiInputLabel-root.Mui-focused': { 
+                color: '#2e7d32',
+                fontWeight: 'bold'
+              }
+            }}
+          />
+          <TextField
+            fullWidth
+            label="Content"
+            margin="normal"
+            multiline
+            rows={4}
+            value={editPostData.content}
+            onChange={(e) => setEditPostData(prev => ({ ...prev, content: e.target.value }))}
+            sx={{
+              '& .MuiOutlinedInput-root': { 
+                '&.Mui-focused fieldset': { 
+                  borderColor: '#2e7d32',
+                  borderWidth: 2
+                } 
+              },
+              '& .MuiInputLabel-root.Mui-focused': { 
+                color: '#2e7d32',
+                fontWeight: 'bold'
+              }
+            }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 3 }}>
+          <Button 
+            onClick={() => setEditPostDialog({ open: false, post: null })} 
+            size="large"
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleUpdatePost} 
+            variant="contained" 
+            size="large"
+            sx={{ backgroundColor: '#2e7d32', '&:hover': { backgroundColor: '#1b5e20' } }}
+          >
+            Update
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Edit Comment Dialog */}
+      <Dialog
+        open={editCommentDialog.open}
+        onClose={() => setEditCommentDialog({ open: false, comment: null, postId: null })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ color: '#2e7d32', fontSize: '1.5rem' }}>Edit Comment</DialogTitle>
+        <DialogContent>
+          <TextField
+            fullWidth
+            label="Comment"
+            margin="normal"
+            multiline
+            rows={3}
+            value={editCommentData}
+            onChange={(e) => setEditCommentData(e.target.value)}
+            sx={{
+              '& .MuiOutlinedInput-root': { 
+                '&.Mui-focused fieldset': { 
+                  borderColor: '#2e7d32',
+                  borderWidth: 2
+                } 
+              },
+              '& .MuiInputLabel-root.Mui-focused': { 
+                color: '#2e7d32',
+                fontWeight: 'bold'
+              }
+            }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 3 }}>
+          <Button 
+            onClick={() => setEditCommentDialog({ open: false, comment: null, postId: null })} 
+            size="large"
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleUpdateComment} 
+            variant="contained" 
+            size="large"
+            sx={{ backgroundColor: '#2e7d32', '&:hover': { backgroundColor: '#1b5e20' } }}
+          >
+            Update
           </Button>
         </DialogActions>
       </Dialog>
